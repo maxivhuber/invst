@@ -1,0 +1,14 @@
+[project]
+name = "invst"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ipykernel>=6.29.5",
+    "nbformat>=5.10.4",
+    "openpyxl>=3.1.5",
+    "pandas>=2.2.3",
+    "plotly>=6.1.0",
+    "yfinance>=0.2.61",
+]
