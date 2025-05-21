@@ -1,0 +1,169 @@
+import dash
+import pandas as pd
+import plotly.graph_objs as go
+from dash import Input, Output, State, callback, dcc, html
+
+from chart import fetch_and_process_spx
+from helpers import load_hyperparams  # Only need to load the default
+
+app = dash.Dash(__name__)
+app.title = "S&P 500 SMA Trading Demo"
+
+
+def serve_layout():
+    # Load once for initial values only
+    hyperparams = load_hyperparams()
+    return html.Div(
+        [
+            html.Div(
+                html.H2("S&P 500 Adj Close, SMA & Trend Signals"),
+                style={"textAlign": "center", "marginBottom": "1.5em"},
+            ),
+            dcc.Graph(id="price-chart"),
+            dcc.Interval(id="refresh", interval=60 * 1000, n_intervals=0),  # 60s
+            html.Div(
+                [
+                    html.Label("MA Window:", style={"marginRight": "0.5em"}),
+                    dcc.Input(
+                        id="ma-window",
+                        type="number",
+                        value=hyperparams["MA_WINDOW"],
+                        min=1,
+                        style={"marginRight": "1em"},
+                    ),
+                    html.Label("Threshold:", style={"marginRight": "0.5em"}),
+                    dcc.Input(
+                        id="threshold",
+                        type="number",
+                        value=hyperparams["THRESHOLD"],
+                        min=0,
+                        step=0.001,
+                        style={"marginRight": "1em"},
+                    ),
+                    html.Button("Apply Hyperparameters", id="update-hyperparams"),
+                ],
+                style={
+                    "display": "flex",
+                    "justifyContent": "center",
+                    "alignItems": "center",
+                    "marginTop": "2em",
+                    "marginBottom": "1em",
+                },
+            ),
+        ]
+    )
+
+
+app.layout = serve_layout
+
+
+@callback(
+    Output("price-chart", "figure"),
+    [Input("refresh", "n_intervals"), Input("update-hyperparams", "n_clicks")],
+    [State("ma-window", "value"), State("threshold", "value")],
+)
+def update_plot(_, __, ma_window, threshold):
+    if ma_window is None or threshold is None:
+        params = load_hyperparams()
+        ma_window = params["MA_WINDOW"]
+        threshold = params["THRESHOLD"]
+    try:
+        gspc = fetch_and_process_spx(ma_window, threshold)
+    except Exception as e:
+        fig = go.Figure()
+        fig.update_layout(title=f"Error: {e}")
+        return fig
+
+    end = gspc.index.max()
+    start = end - pd.DateOffset(months=9)
+    data = gspc.loc[start:]
+    fig = go.Figure()
+    # Price (close): Black
+    fig.add_trace(
+        go.Scatter(
+            x=data.index,
+            y=data["Adj_Close"],
+            mode="lines",
+            name="Adj Close",
+            line=dict(color="#222", width=2),
+        )
+    )
+    # SMA: Magenta
+    fig.add_trace(
+        go.Scatter(
+            x=data.index,
+            y=data["SMA"],
+            mode="lines",
+            name="SMA",
+            line=dict(color="#A020F0", width=2, dash="dash"),
+        )
+    )
+    # Threshold Band: Light Gray-Blue
+    fig.add_traces(
+        [
+            go.Scatter(
+                x=data.index,
+                y=data["upp"],
+                mode="lines",
+                line=dict(width=0),
+                showlegend=False,
+                hoverinfo="skip",
+            ),
+            go.Scatter(
+                x=data.index,
+                y=data["low"],
+                mode="lines",
+                fill="tonexty",
+                fillcolor="rgba(112, 128, 144, 0.18)",  # slategray pastel
+                line=dict(width=0),
+                name="Threshold Band",
+                showlegend=True,
+                hoverinfo="skip",
+            ),
+        ]
+    )
+    # Buy = Green
+    buys = data[data.signal == "BUY"]
+    sells = data[data.signal == "SELL"]
+    fig.add_trace(
+        go.Scatter(
+            x=buys.index,
+            y=buys["Adj_Close"],
+            mode="markers",
+            marker=dict(
+                symbol="triangle-up",
+                color="#27AE60",
+                size=12,
+                line=dict(width=2, color="#155d27"),
+            ),
+            name="Buy",
+        )
+    )
+    # Sell = Red
+    fig.add_trace(
+        go.Scatter(
+            x=sells.index,
+            y=sells["Adj_Close"],
+            mode="markers",
+            marker=dict(
+                symbol="triangle-down",
+                color="#C0392B",
+                size=12,
+                line=dict(width=2, color="#7f1d1d"),
+            ),
+            name="Sell",
+        )
+    )
+    fig.update_layout(
+        margin={"l": 30, "r": 20, "b": 40, "t": 40},
+        template="plotly_white",
+        title="S&P 500 Adj Close with SMA, Threshold Area, Buy/Sell Signals",
+        xaxis_title="Date",
+        yaxis_title="Price",
+        legend=dict(orientation="h", y=1.05, x=1, xanchor="right"),
+    )
+    return fig
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
