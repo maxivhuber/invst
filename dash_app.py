@@ -4,14 +4,15 @@ import plotly.graph_objs as go
 from dash import Input, Output, State, callback, dcc, html
 
 from chart import fetch_and_process_spx
-from helpers import load_hyperparams  # Only need to load the default
+from helpers import load_hyperparams
 
 app = dash.Dash(__name__)
 app.title = "S&P 500 SMA Trading Demo"
 
+DEFAULT_MONTHS_SHOW = 9
+
 
 def serve_layout():
-    # Load once for initial values only
     hyperparams = load_hyperparams()
     return html.Div(
         [
@@ -20,7 +21,7 @@ def serve_layout():
                 style={"textAlign": "center", "marginBottom": "1.5em"},
             ),
             dcc.Graph(id="price-chart"),
-            dcc.Interval(id="refresh", interval=60 * 1000, n_intervals=0),  # 60s
+            dcc.Interval(id="refresh", interval=60 * 1000, n_intervals=0),
             html.Div(
                 [
                     html.Label("MA Window:", style={"marginRight": "0.5em"}),
@@ -40,6 +41,16 @@ def serve_layout():
                         step=0.001,
                         style={"marginRight": "1em"},
                     ),
+                    html.Label("Months to show:", style={"marginRight": "0.5em"}),
+                    dcc.Input(
+                        id="months-show",
+                        type="number",
+                        value=DEFAULT_MONTHS_SHOW,
+                        min=1,
+                        max=60,
+                        step=1,
+                        style={"marginRight": "1em"},
+                    ),
                     html.Button("Apply Hyperparameters", id="update-hyperparams"),
                 ],
                 style={
@@ -54,19 +65,26 @@ def serve_layout():
     )
 
 
-app.layout = serve_layout
+app.layout = serve_layout()
 
 
 @callback(
     Output("price-chart", "figure"),
     [Input("refresh", "n_intervals"), Input("update-hyperparams", "n_clicks")],
-    [State("ma-window", "value"), State("threshold", "value")],
+    [
+        State("ma-window", "value"),
+        State("threshold", "value"),
+        State("months-show", "value"),
+    ],
 )
-def update_plot(_, __, ma_window, threshold):
+def update_plot(_, __, ma_window, threshold, months_show):
     if ma_window is None or threshold is None:
         params = load_hyperparams()
         ma_window = params["MA_WINDOW"]
         threshold = params["THRESHOLD"]
+    if not isinstance(months_show, int) or months_show < 1:
+        months_show = DEFAULT_MONTHS_SHOW
+
     try:
         gspc = fetch_and_process_spx(ma_window, threshold)
     except Exception as e:
@@ -75,10 +93,10 @@ def update_plot(_, __, ma_window, threshold):
         return fig
 
     end = gspc.index.max()
-    start = end - pd.DateOffset(months=9)
+    start = end - pd.DateOffset(months=int(months_show))
     data = gspc.loc[start:]
+
     fig = go.Figure()
-    # Price (close): Black
     fig.add_trace(
         go.Scatter(
             x=data.index,
@@ -88,7 +106,6 @@ def update_plot(_, __, ma_window, threshold):
             line=dict(color="#222", width=2),
         )
     )
-    # SMA: Magenta
     fig.add_trace(
         go.Scatter(
             x=data.index,
@@ -98,7 +115,6 @@ def update_plot(_, __, ma_window, threshold):
             line=dict(color="#A020F0", width=2, dash="dash"),
         )
     )
-    # Threshold Band: Light Gray-Blue
     fig.add_traces(
         [
             go.Scatter(
@@ -114,7 +130,7 @@ def update_plot(_, __, ma_window, threshold):
                 y=data["low"],
                 mode="lines",
                 fill="tonexty",
-                fillcolor="rgba(112, 128, 144, 0.18)",  # slategray pastel
+                fillcolor="rgba(112, 128, 144, 0.18)",
                 line=dict(width=0),
                 name="Threshold Band",
                 showlegend=True,
@@ -122,7 +138,6 @@ def update_plot(_, __, ma_window, threshold):
             ),
         ]
     )
-    # Buy = Green
     buys = data[data.signal == "BUY"]
     sells = data[data.signal == "SELL"]
     fig.add_trace(
@@ -139,7 +154,6 @@ def update_plot(_, __, ma_window, threshold):
             name="Buy",
         )
     )
-    # Sell = Red
     fig.add_trace(
         go.Scatter(
             x=sells.index,
