@@ -20,7 +20,15 @@ def serve_layout():
                 html.H2("S&P 500 Adj Close, SMA & Trend Signals"),
                 style={"textAlign": "center", "marginBottom": "1.5em"},
             ),
-            dcc.Graph(id="price-chart"),
+            dcc.Graph(
+                id="price-chart",
+                style={
+                    "width": "100vw",
+                    "height": "56.25vw",  # 16:9 ratio
+                    "maxHeight": "85vh",
+                    "maxWidth": "100vw",
+                },
+            ),
             dcc.Interval(id="refresh", interval=60 * 1000, n_intervals=0),
             html.Div(
                 [
@@ -180,4 +188,4 @@ def update_plot(_, __, ma_window, threshold, months_show):
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=8050, debug=True)
