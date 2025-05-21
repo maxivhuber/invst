@@ -1,15 +1,13 @@
 import dash
 import pandas as pd
 import plotly.graph_objs as go
-from dash import Input, Output, State, callback, dcc, html
+from dash import Input, Output, callback, dcc, html
 
 from chart import fetch_and_process_spx
 from helpers import load_hyperparams
 
 app = dash.Dash(__name__)
 app.title = "S&P 500 SMA Trading Demo"
-
-DEFAULT_MONTHS_SHOW = 9
 
 
 def serve_layout():
@@ -24,7 +22,7 @@ def serve_layout():
                 id="price-chart",
                 style={
                     "width": "100vw",
-                    "height": "56.25vw",  # 16:9 ratio
+                    "height": "56.25vw",
                     "maxHeight": "85vh",
                     "maxWidth": "100vw",
                 },
@@ -53,13 +51,22 @@ def serve_layout():
                     dcc.Input(
                         id="months-show",
                         type="number",
-                        value=DEFAULT_MONTHS_SHOW,
+                        value=hyperparams["DEFAULT_MONTHS_SHOW"],
                         min=1,
-                        max=60,
+                        max=12 * 80,
                         step=1,
                         style={"marginRight": "1em"},
                     ),
-                    html.Button("Apply Hyperparameters", id="update-hyperparams"),
+                    dcc.Checklist(
+                        id="log-scale",
+                        options=[{"label": "Log scale", "value": "log"}],
+                        value=[],
+                        style={
+                            "marginRight": "1em",
+                            "display": "flex",
+                            "alignItems": "center",
+                        },
+                    ),
                 ],
                 style={
                     "display": "flex",
@@ -78,20 +85,23 @@ app.layout = serve_layout()
 
 @callback(
     Output("price-chart", "figure"),
-    [Input("refresh", "n_intervals"), Input("update-hyperparams", "n_clicks")],
     [
-        State("ma-window", "value"),
-        State("threshold", "value"),
-        State("months-show", "value"),
+        Input("refresh", "n_intervals"),
+        Input("ma-window", "value"),
+        Input("threshold", "value"),
+        Input("months-show", "value"),
+        Input("log-scale", "value"),
     ],
 )
-def update_plot(_, __, ma_window, threshold, months_show):
-    if ma_window is None or threshold is None:
-        params = load_hyperparams()
-        ma_window = params["MA_WINDOW"]
-        threshold = params["THRESHOLD"]
-    if not isinstance(months_show, int) or months_show < 1:
-        months_show = DEFAULT_MONTHS_SHOW
+def update_plot(_, ma_window, threshold, months_show, log_scale):
+    # Load defaults if any parameter is missing
+    hyperparams = load_hyperparams()
+    if ma_window is None:
+        ma_window = hyperparams["MA_WINDOW"]
+    if threshold is None:
+        threshold = hyperparams["THRESHOLD"]
+    if months_show is None or not isinstance(months_show, int) or months_show < 1:
+        months_show = hyperparams["DEFAULT_MONTHS_SHOW"]
 
     try:
         gspc = fetch_and_process_spx(ma_window, threshold)
@@ -105,6 +115,7 @@ def update_plot(_, __, ma_window, threshold, months_show):
     data = gspc.loc[start:]
 
     fig = go.Figure()
+
     fig.add_trace(
         go.Scatter(
             x=data.index,
@@ -183,9 +194,11 @@ def update_plot(_, __, ma_window, threshold, months_show):
         xaxis_title="Date",
         yaxis_title="Price",
         legend=dict(orientation="h", y=1.05, x=1, xanchor="right"),
+        yaxis_type="log" if "log" in log_scale else "linear",
+        uirevision="spx-chart-1",
     )
     return fig
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8050, debug=True)
+    app.run(host="0.0.0.0", port=8050, debug=False)
