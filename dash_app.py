@@ -44,7 +44,7 @@ def serve_layout():
                         type="number",
                         value=hyperparams["THRESHOLD"],
                         min=0,
-                        step=0.99,
+                        step=0.0001,
                         style={"marginRight": "1em"},
                     ),
                     html.Label("Months to show:", style={"marginRight": "0.5em"}),
