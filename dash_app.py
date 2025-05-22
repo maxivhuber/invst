@@ -203,5 +203,4 @@ def update_plot(_, ma_window, threshold, months_show, log_scale):
 server = app.server
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", debug=False)
-
+    app.run(debug=False)

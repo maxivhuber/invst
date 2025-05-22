@@ -6,4 +6,4 @@ WORKDIR /app
 COPY . .
 RUN uv sync
 
-ENTRYPOINT [ "uv", "run", "gunicorn", "dash_app:server" ]
+ENTRYPOINT ["uv", "run", "gunicorn", "-b", "0.0.0.0:8050", "dash_app:server"]

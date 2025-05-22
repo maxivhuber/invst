@@ -2,8 +2,8 @@ services:
   dashapp:
     container_name: "dashapp"
     build: .
-    expose:
-    - 8000
+    ports:
+      - 8080:8050
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.dashapp.rule=Host(`invst.mhuber.dev`)"
