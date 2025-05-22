@@ -1,0 +1,19 @@
+services:
+  dashapp:
+    container_name: "dashapp"
+    build: .
+    expose:
+    - 8000
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashapp.rule=Host(`invst.mhuber.dev`)"
+      - "traefik.http.routers.dashapp.entrypoints=http"
+      - "traefik.http.routers.dashapp.middlewares=ratelimiter@file"
+      - "com.centurylinklabs.watchtower.enable=false"
+    networks:
+      - net
+    restart: unless-stopped
+
+networks:
+  net:
+    external: true

@@ -200,5 +200,8 @@ def update_plot(_, ma_window, threshold, months_show, log_scale):
     return fig
 
 
+server = app.server
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8050, debug=False)
+    app.run(host="0.0.0.0", debug=False)
+
