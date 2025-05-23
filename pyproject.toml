@@ -11,6 +11,7 @@ dependencies = [
     "nbformat>=5.10.4",
     "openpyxl>=3.1.5",
     "pandas>=2.2.3",
+    "pandas-market-calendars>=5.1.0",
     "plotly>=6.1.0",
     "pytz>=2025.2",
     "yfinance>=0.2.61",

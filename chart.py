@@ -1,64 +1,101 @@
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
+import pandas_market_calendars as mcal
 import pytz
 import yfinance as yf
 
 from helpers import ensure_symbol_data
 
 
-def fetch_and_process_spx(ma_window, threshold):
-    # --- Current US trading hours ---
+def market_is_open():
     eastern = pytz.timezone("US/Eastern")
-    now_et = datetime.now(eastern)
-    is_weekday = now_et.weekday() < 5
-    after_open = now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30)
-    before_close = now_et.hour < 16
-    if not (is_weekday and after_open and before_close):
-        raise RuntimeError("US stock market is closed.")
+    now = datetime.now(eastern)
+    nyse = mcal.get_calendar("NYSE")
+    # Get today's trading schedule
+    schedule = nyse.schedule(start_date=now.date(), end_date=now.date())
 
-    # --- Most up-to-date today value: 1m data last 30min
+    if schedule.empty:
+        return False
+
+    open_dt = schedule.iloc[0]["market_open"].tz_convert(eastern)
+    close_dt = schedule.iloc[0]["market_close"].tz_convert(eastern)
+    return open_dt <= now <= close_dt
+
+
+def fetch_base_history(symbol):
+    """Fetches and formats daily historical data for the given symbol."""
+    data = ensure_symbol_data(symbol)
+    data = data.rename(columns={c: c.replace(" ", "_") for c in data.columns})
+    data.index = pd.to_datetime(data.index)
+    return data
+
+
+def fetch_recent_intraday_close(symbol):
+    """Fetches the latest 1m close value from the last 30mins for the symbol."""
     now_utc = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-    end = now_utc
-    start = end - timedelta(minutes=30)
-    intraday = yf.download(
-        "^GSPC", start=start, end=end, interval="1m", progress=False, auto_adjust=False
+    start = now_utc - timedelta(minutes=30)
+    df = yf.download(
+        symbol,
+        start=start,
+        end=now_utc,
+        interval="1m",
+        progress=False,
+        auto_adjust=False,
     )
-    if isinstance(intraday.columns, pd.MultiIndex):
-        intraday.columns = [col[0] for col in intraday.columns.values]
-    intraday.index.name = "Date"
-    tail_close = pd.to_numeric(intraday["Adj Close"], errors="coerce")
-    last_val = tail_close.dropna().iloc[-1] if not tail_close.dropna().empty else None
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [col[0] for col in df.columns.values]
+    close = pd.to_numeric(df["Adj Close"], errors="coerce")
+    last_val = close.dropna().iloc[-1] if not close.dropna().empty else None
+    return last_val, now_utc.date()
 
-    # --- Base historical daily data
-    gspc = ensure_symbol_data("^GSPC")
-    gspc = gspc.rename(columns={c: c.replace(" ", "_") for c in gspc.columns})
-    today = now_utc.date()
+
+def update_latest_close(data, last_val, today):
+    """Update or insert the last close for today into the daily data."""
     if last_val is not None:
-        if gspc.index[-1].date() == today:
-            gspc.iloc[-1, gspc.columns.get_loc("Adj_Close")] = last_val
-        elif gspc.index[-1].date() < today:
+        if data.index[-1].date() == today:
+            data.iloc[-1, data.columns.get_loc("Adj_Close")] = last_val
+        elif data.index[-1].date() < today:
             new_idx = pd.Timestamp(today)
-            new_row = [None] * (gspc.shape[1] - 1) + [last_val]
-            gspc.loc[new_idx] = new_row
+            new_row = [None] * (data.shape[1] - 1) + [last_val]
+            data.loc[new_idx] = new_row
+    return data
 
-    # fill missing dates, calculate SMA, bands, signals
-    full_idx = pd.date_range(gspc.index.min(), gspc.index.max(), freq="D")
-    gspc = gspc.reindex(full_idx).ffill().bfill()
 
-    gspc["SMA"] = gspc["Adj_Close"].rolling(window=ma_window).mean()
-    gspc = gspc.dropna(subset=["SMA"])
-    gspc["upp"] = gspc["SMA"] * (1 + threshold)
-    gspc["low"] = gspc["SMA"] * (1 - threshold)
-    gspc["signal"] = None
-
-    # trading signals generation, simple loop
+def process_signals(data, ma_window, threshold, overwrite_value=None):
+    """Calculate SMA, threshold bands, trading signals."""
+    # Ensure no missing dates
+    data = (
+        data.reindex(pd.date_range(data.index.min(), data.index.max(), freq="D"))
+        .ffill()
+        .bfill()
+    )
+    # Overwrite close value (UI entry)
+    if overwrite_value is not None:
+        data.at[data.index.max(), "Adj_Close"] = overwrite_value
+    data["SMA"] = data["Adj_Close"].rolling(window=ma_window).mean()
+    data = data.dropna(subset=["SMA"])
+    data["upp"] = data["SMA"] * (1 + threshold)
+    data["low"] = data["SMA"] * (1 - threshold)
+    data["signal"] = None
     invested = False
-    for idx, row in enumerate(gspc.itertuples(), 0):
+    for idx, row in enumerate(data.itertuples(), 0):
         if not invested and row.Adj_Close >= row.upp:
-            gspc.iat[idx, gspc.columns.get_loc("signal")] = "BUY"
+            data.iat[idx, data.columns.get_loc("signal")] = "BUY"
             invested = True
         elif invested and row.Adj_Close < row.low:
-            gspc.iat[idx, gspc.columns.get_loc("signal")] = "SELL"
+            data.iat[idx, data.columns.get_loc("signal")] = "SELL"
             invested = False
-    return gspc
+    return data
+
+
+def fetch_and_process_symbol(
+    base_symbol, intraday_symbol, ma_window, threshold, overwrite_value=None
+):
+    if not market_is_open():
+        raise RuntimeError("US stock market is closed.")
+    base = fetch_base_history(base_symbol)
+    last_val, today = fetch_recent_intraday_close(intraday_symbol)
+    base = update_latest_close(base, last_val, today)
+    result = process_signals(base, ma_window, threshold, overwrite_value)
+    return result
