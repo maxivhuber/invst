@@ -26,8 +26,7 @@ def save_hyperparams(ma_window, threshold, path=HYPERPARAMS_PATH):
 
 def ensure_symbol_data(symbol, data_dir=DATA_DIR):
     os.makedirs(data_dir, exist_ok=True)
-    fname = os.path.join(data_dir, "base_", symbol.replace("^", "").lower() + ".csv")
-
+    fname = os.path.join(data_dir, f"base_{symbol.replace('^', '').lower() + '.csv'}")
     if os.path.exists(fname):
         df = pd.read_csv(fname, parse_dates=["Date"], index_col="Date")
         today = pd.Timestamp.today().normalize()
